@@ -547,14 +547,42 @@ radarMapEl.addEventListener(
     const mapSize = getMapSize();
 
     if (event.touches.length === 1) {
-      radarTouch = {
-        mode: 'drag',
-        startX: event.touches[0].clientX,
-        startY: event.touches[0].clientY,
-        startCenterPxX: radarState.centerPxX,
-        startCenterPxY: radarState.centerPxY,
-        startTime: Date.now(),
-      };
+      const touch = event.touches[0];
+      const rect = radarMapEl.getBoundingClientRect();
+      const touchX = touch.clientX - rect.left;
+      const touchY = touch.clientY - rect.top;
+      const now = Date.now();
+
+      // If this touch lands where/when the last tap did, it's the second tap of a double-tap.
+      // Google Maps behavior: a quick lift zooms in one level; holding and dragging afterward
+      // (handled in touchmove/touchend below) instead zooms continuously, anchored right here.
+      const isSecondTap =
+        lastTapPos &&
+        now - lastTapTime < DOUBLE_TAP_MAX_GAP_MS &&
+        Math.hypot(touchX - lastTapPos.x, touchY - lastTapPos.y) < DOUBLE_TAP_MAX_DISTANCE_PX;
+
+      if (isSecondTap) {
+        lastTapTime = 0;
+        lastTapPos = null;
+        radarTouch = {
+          mode: 'doubleTapZoom',
+          anchorX: touchX,
+          anchorY: touchY,
+          startTouchX: touch.clientX,
+          startTouchY: touch.clientY,
+          startTime: now,
+        };
+        radarTilesEl.style.transformOrigin = `${touchX}px ${touchY}px`;
+      } else {
+        radarTouch = {
+          mode: 'drag',
+          startX: touch.clientX,
+          startY: touch.clientY,
+          startCenterPxX: radarState.centerPxX,
+          startCenterPxY: radarState.centerPxY,
+          startTime: now,
+        };
+      }
     } else if (event.touches.length === 2) {
       const rect = radarMapEl.getBoundingClientRect();
       const startMid = touchMidpoint(event.touches[0], event.touches[1], rect);
@@ -589,6 +617,14 @@ radarMapEl.addEventListener(
       const dx = touch.clientX - radarTouch.startX;
       const dy = touch.clientY - radarTouch.startY;
       radarTilesEl.style.transform = `translate(${dx}px, ${dy}px)`;
+    } else if (radarTouch.mode === 'doubleTapZoom' && event.touches.length === 1) {
+      event.preventDefault();
+      const touch = event.touches[0];
+      const dy = touch.clientY - radarTouch.startTouchY;
+      // Dragging up zooms in, dragging down zooms out — anchored at the double-tap point,
+      // which stays fixed on screen the whole time (no panning from this gesture).
+      radarTouch.lastZoomDelta = -dy / DRAG_ZOOM_PX_PER_LEVEL;
+      radarTilesEl.style.transform = `scale(${2 ** radarTouch.lastZoomDelta})`;
     } else if (radarTouch.mode === 'pinch' && event.touches.length === 2) {
       event.preventDefault();
       const rect = radarMapEl.getBoundingClientRect();
@@ -607,12 +643,14 @@ radarMapEl.addEventListener(
 );
 
 // Tap detection: a touch that ends quickly without much movement counts as a tap.
-// Two of those (one finger) close together in time and position = double-tap = zoom in.
-// A single two-finger tap = zoom out. Both anchor the zoom at the tap location.
+// Two of those close together in time and position form a double-tap; touchstart above
+// already recognizes the second one and switches into 'doubleTapZoom' mode for it, so this
+// only needs to record single taps here (see DRAG_ZOOM_PX_PER_LEVEL for the drag-to-zoom rate).
 const TAP_MAX_DURATION_MS = 300;
 const TAP_MAX_MOVE_PX = 12;
 const DOUBLE_TAP_MAX_GAP_MS = 350;
 const DOUBLE_TAP_MAX_DISTANCE_PX = 40;
+const DRAG_ZOOM_PX_PER_LEVEL = 120;
 
 let lastTapTime = 0;
 let lastTapPos = null;
@@ -631,21 +669,8 @@ function endRadarTouch(event) {
     if (endTouch && moved < TAP_MAX_MOVE_PX && duration < TAP_MAX_DURATION_MS) {
       radarTilesEl.style.transform = '';
       radarTouch = null;
-
-      const now = Date.now();
-      const isDoubleTap =
-        lastTapPos &&
-        now - lastTapTime < DOUBLE_TAP_MAX_GAP_MS &&
-        Math.hypot(tapX - lastTapPos.x, tapY - lastTapPos.y) < DOUBLE_TAP_MAX_DISTANCE_PX;
-
-      if (isDoubleTap) {
-        lastTapTime = 0;
-        lastTapPos = null;
-        zoomRadar(1, tapX, tapY); // double-tap: zoom in on the tapped point
-      } else {
-        lastTapTime = now;
-        lastTapPos = { x: tapX, y: tapY };
-      }
+      lastTapTime = Date.now();
+      lastTapPos = { x: tapX, y: tapY };
       return;
     }
 
@@ -654,26 +679,40 @@ function endRadarTouch(event) {
       radarState.centerPxX = radarTouch.startCenterPxX - parseFloat(match[1]);
       radarState.centerPxY = radarTouch.startCenterPxY - parseFloat(match[2]);
     }
-  } else if (radarTouch.mode === 'pinch') {
-    const moved = Math.hypot(radarTouch.lastMid.x - radarTouch.startMid.x, radarTouch.lastMid.y - radarTouch.startMid.y);
-    const scaleChanged = Math.abs(radarTouch.lastScale - 1) > 0.08;
+  } else if (radarTouch.mode === 'doubleTapZoom') {
+    const endTouch = event.changedTouches && event.changedTouches[0];
+    const dy = endTouch ? endTouch.clientY - radarTouch.startTouchY : 0;
+    const dx = endTouch ? endTouch.clientX - radarTouch.startTouchX : 0;
+    const moved = Math.hypot(dx, dy);
 
     radarTilesEl.style.transform = '';
     radarTilesEl.style.transformOrigin = '';
 
-    if (!scaleChanged && moved < TAP_MAX_MOVE_PX && duration < TAP_MAX_DURATION_MS) {
-      const tapMid = radarTouch.lastMid;
-      radarTouch = null;
-      zoomRadar(-1, tapMid.x, tapMid.y); // two-finger tap: zoom out, anchored at the midpoint
-      return;
-    }
+    const anchorX = radarTouch.anchorX;
+    const anchorY = radarTouch.anchorY;
+    radarTouch = null;
 
+    if (moved < TAP_MAX_MOVE_PX && duration < TAP_MAX_DURATION_MS) {
+      zoomRadar(1, anchorX, anchorY); // quick double-tap, no drag: zoom in one level
+    } else {
+      const deltaLevels = Math.round(-dy / DRAG_ZOOM_PX_PER_LEVEL);
+      if (deltaLevels !== 0) {
+        zoomRadar(deltaLevels, anchorX, anchorY); // double-tap + drag: zoom by however far it moved
+      } else {
+        drawRadarTiles();
+      }
+    }
+    return;
+  } else if (radarTouch.mode === 'pinch') {
     const mapSize = getMapSize();
     const newZoom = Math.min(
       RADAR_MAX_ZOOM,
       Math.max(RADAR_MIN_ZOOM, Math.round(radarTouch.startZoom + Math.log2(radarTouch.lastScale)))
     );
     const scaleFactor = 2 ** (newZoom - radarTouch.startZoom);
+
+    radarTilesEl.style.transform = '';
+    radarTilesEl.style.transformOrigin = '';
 
     radarState.centerPxX = radarTouch.startWorldMidX * scaleFactor - radarTouch.lastMid.x + mapSize / 2;
     radarState.centerPxY = radarTouch.startWorldMidY * scaleFactor - radarTouch.lastMid.y + mapSize / 2;
