@@ -353,6 +353,13 @@ async function renderRadar(lat, lon) {
   }
 }
 
+// The container is responsive (CSS max-width: 100% shrinks it on small screens), so all pixel
+// math must use its real rendered size rather than the RADAR_MAP_SIZE constant — otherwise
+// positioning (and anything "centered" on the box) drifts on any screen narrower than that.
+function getMapSize() {
+  return radarMapEl.clientWidth || RADAR_MAP_SIZE;
+}
+
 // Rebuilds the tile grid + city marker for the current radarState (zoom/pan position).
 function drawRadarTiles() {
   if (!radarState) return;
@@ -362,14 +369,15 @@ function drawRadarTiles() {
 
   const { zoom, centerPxX, centerPxY, radarPath, cityLon, cityLat } = radarState;
   const worldTiles = 2 ** zoom;
+  const mapSize = getMapSize();
 
-  const originX = centerPxX - RADAR_MAP_SIZE / 2;
-  const originY = centerPxY - RADAR_MAP_SIZE / 2;
+  const originX = centerPxX - mapSize / 2;
+  const originY = centerPxY - mapSize / 2;
 
   const startTileX = Math.floor(originX / RADAR_TILE_SIZE);
-  const endTileX = Math.floor((originX + RADAR_MAP_SIZE) / RADAR_TILE_SIZE);
+  const endTileX = Math.floor((originX + mapSize) / RADAR_TILE_SIZE);
   const startTileY = Math.floor(originY / RADAR_TILE_SIZE);
-  const endTileY = Math.floor((originY + RADAR_MAP_SIZE) / RADAR_TILE_SIZE);
+  const endTileY = Math.floor((originY + mapSize) / RADAR_TILE_SIZE);
 
   for (let x = startTileX; x <= endTileX; x++) {
     for (let y = startTileY; y <= endTileY; y++) {
@@ -406,7 +414,7 @@ function drawRadarTiles() {
 
   const originRX = originX / radarScale;
   const originRY = originY / radarScale;
-  const mapSizeR = RADAR_MAP_SIZE / radarScale;
+  const mapSizeR = mapSize / radarScale;
 
   const startRTileX = Math.floor(originRX / RADAR_TILE_SIZE);
   const endRTileX = Math.floor((originRX + mapSizeR) / RADAR_TILE_SIZE);
@@ -452,15 +460,16 @@ function zoomRadar(direction, screenX, screenY) {
   const newZoom = Math.min(RADAR_MAX_ZOOM, Math.max(RADAR_MIN_ZOOM, radarState.zoom + direction));
   if (newZoom === radarState.zoom) return;
 
-  const originX = radarState.centerPxX - RADAR_MAP_SIZE / 2;
-  const originY = radarState.centerPxY - RADAR_MAP_SIZE / 2;
+  const mapSize = getMapSize();
+  const originX = radarState.centerPxX - mapSize / 2;
+  const originY = radarState.centerPxY - mapSize / 2;
   const worldX = originX + screenX;
   const worldY = originY + screenY;
 
   const scaleFactor = 2 ** (newZoom - radarState.zoom);
 
-  radarState.centerPxX = worldX * scaleFactor - screenX + RADAR_MAP_SIZE / 2;
-  radarState.centerPxY = worldY * scaleFactor - screenY + RADAR_MAP_SIZE / 2;
+  radarState.centerPxX = worldX * scaleFactor - screenX + mapSize / 2;
+  radarState.centerPxY = worldY * scaleFactor - screenY + mapSize / 2;
   radarState.zoom = newZoom;
 
   drawRadarTiles();
@@ -511,20 +520,58 @@ radarMapEl.addEventListener(
   { passive: false }
 );
 
-radarZoomInBtn.addEventListener('click', () => zoomRadar(1, RADAR_MAP_SIZE / 2, RADAR_MAP_SIZE / 2));
-radarZoomOutBtn.addEventListener('click', () => zoomRadar(-1, RADAR_MAP_SIZE / 2, RADAR_MAP_SIZE / 2));
+radarZoomInBtn.addEventListener('click', () => zoomRadar(1, getMapSize() / 2, getMapSize() / 2));
+radarZoomOutBtn.addEventListener('click', () => zoomRadar(-1, getMapSize() / 2, getMapSize() / 2));
+
+// Touch: single finger drags, two fingers pinch-to-zoom (anchored at the pinch midpoint,
+// so panning while pinching works too — same live-preview-then-snap pattern as mouse drag).
+let radarTouch = null;
+
+function touchDistance(t0, t1) {
+  const dx = t1.clientX - t0.clientX;
+  const dy = t1.clientY - t0.clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function touchMidpoint(t0, t1, rect) {
+  return {
+    x: (t0.clientX + t1.clientX) / 2 - rect.left,
+    y: (t0.clientY + t1.clientY) / 2 - rect.top,
+  };
+}
 
 radarMapEl.addEventListener(
   'touchstart',
   (event) => {
-    if (!radarState || event.touches.length !== 1) return;
-    const touch = event.touches[0];
-    radarDrag = {
-      startX: touch.clientX,
-      startY: touch.clientY,
-      startCenterPxX: radarState.centerPxX,
-      startCenterPxY: radarState.centerPxY,
-    };
+    if (!radarState) return;
+    const mapSize = getMapSize();
+
+    if (event.touches.length === 1) {
+      radarTouch = {
+        mode: 'drag',
+        startX: event.touches[0].clientX,
+        startY: event.touches[0].clientY,
+        startCenterPxX: radarState.centerPxX,
+        startCenterPxY: radarState.centerPxY,
+      };
+    } else if (event.touches.length === 2) {
+      const rect = radarMapEl.getBoundingClientRect();
+      const startMid = touchMidpoint(event.touches[0], event.touches[1], rect);
+
+      radarTouch = {
+        mode: 'pinch',
+        startDistance: touchDistance(event.touches[0], event.touches[1]),
+        startZoom: radarState.zoom,
+        startMid,
+        // The real-world point under the pinch midpoint, so it can be kept anchored there
+        // (the same "zoom toward a fixed point" trick zoomRadar uses for scroll-to-zoom).
+        startWorldMidX: radarState.centerPxX - mapSize / 2 + startMid.x,
+        startWorldMidY: radarState.centerPxY - mapSize / 2 + startMid.y,
+        lastMid: startMid,
+        lastScale: 1,
+      };
+      radarTilesEl.style.transformOrigin = `${startMid.x}px ${startMid.y}px`;
+    }
   },
   { passive: true }
 );
@@ -532,26 +579,60 @@ radarMapEl.addEventListener(
 radarMapEl.addEventListener(
   'touchmove',
   (event) => {
-    if (!radarDrag || event.touches.length !== 1) return;
-    event.preventDefault();
-    const touch = event.touches[0];
-    const dx = touch.clientX - radarDrag.startX;
-    const dy = touch.clientY - radarDrag.startY;
-    radarTilesEl.style.transform = `translate(${dx}px, ${dy}px)`;
+    if (!radarTouch) return;
+
+    if (radarTouch.mode === 'drag' && event.touches.length === 1) {
+      event.preventDefault();
+      const touch = event.touches[0];
+      const dx = touch.clientX - radarTouch.startX;
+      const dy = touch.clientY - radarTouch.startY;
+      radarTilesEl.style.transform = `translate(${dx}px, ${dy}px)`;
+    } else if (radarTouch.mode === 'pinch' && event.touches.length === 2) {
+      event.preventDefault();
+      const rect = radarMapEl.getBoundingClientRect();
+      const mid = touchMidpoint(event.touches[0], event.touches[1], rect);
+      const distance = touchDistance(event.touches[0], event.touches[1]);
+
+      radarTouch.lastMid = mid;
+      radarTouch.lastScale = distance / radarTouch.startDistance;
+
+      const dx = mid.x - radarTouch.startMid.x;
+      const dy = mid.y - radarTouch.startMid.y;
+      radarTilesEl.style.transform = `translate(${dx}px, ${dy}px) scale(${radarTouch.lastScale})`;
+    }
   },
   { passive: false }
 );
 
-radarMapEl.addEventListener('touchend', () => {
-  if (!radarDrag) return;
-  const match = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(radarTilesEl.style.transform);
-  if (match) {
-    radarState.centerPxX = radarDrag.startCenterPxX - parseFloat(match[1]);
-    radarState.centerPxY = radarDrag.startCenterPxY - parseFloat(match[2]);
+function endRadarTouch() {
+  if (!radarTouch) return;
+
+  if (radarTouch.mode === 'drag') {
+    const match = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(radarTilesEl.style.transform);
+    if (match) {
+      radarState.centerPxX = radarTouch.startCenterPxX - parseFloat(match[1]);
+      radarState.centerPxY = radarTouch.startCenterPxY - parseFloat(match[2]);
+    }
+  } else if (radarTouch.mode === 'pinch') {
+    const mapSize = getMapSize();
+    const newZoom = Math.min(
+      RADAR_MAX_ZOOM,
+      Math.max(RADAR_MIN_ZOOM, Math.round(radarTouch.startZoom + Math.log2(radarTouch.lastScale)))
+    );
+    const scaleFactor = 2 ** (newZoom - radarTouch.startZoom);
+
+    radarState.centerPxX = radarTouch.startWorldMidX * scaleFactor - radarTouch.lastMid.x + mapSize / 2;
+    radarState.centerPxY = radarTouch.startWorldMidY * scaleFactor - radarTouch.lastMid.y + mapSize / 2;
+    radarState.zoom = newZoom;
   }
-  radarDrag = null;
+
+  radarTouch = null;
+  radarTilesEl.style.transformOrigin = '';
   drawRadarTiles();
-});
+}
+
+radarMapEl.addEventListener('touchend', endRadarTouch);
+radarMapEl.addEventListener('touchcancel', endRadarTouch);
 
 // Show a default city as soon as the page loads.
 cityInput.value = 'Tampere';
