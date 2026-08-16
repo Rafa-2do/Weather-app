@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weather App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="app-layout">
+    <main class="card">
+      <h1>Weather App</h1>
+
+      <form id="search-form">
+        <input type="text" id="city-input" placeholder="Enter a city name" required>
+        <button type="submit">Search</button>
+      </form>
+
+      <div id="result">
+        <p>Search for a city to see the weather.</p>
+      </div>
+    </main>
+
+    <aside class="radar-panel">
+      <h3>Rain radar</h3>
+      <div id="radar-map">
+        <div id="radar-tiles"></div>
+        <div class="radar-zoom-controls">
+          <button type="button" id="radar-zoom-in" aria-label="Zoom in">+</button>
+          <button type="button" id="radar-zoom-out" aria-label="Zoom out">&minus;</button>
+        </div>
+        <p class="radar-placeholder" id="radar-placeholder">Search a city to see the rain radar.</p>
+      </div>
+      <p class="radar-caption" id="radar-caption"></p>
+    </aside>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
