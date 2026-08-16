@@ -300,6 +300,9 @@ const radarPlaceholderEl = document.getElementById('radar-placeholder');
 const radarCaptionEl = document.getElementById('radar-caption');
 const radarZoomInBtn = document.getElementById('radar-zoom-in');
 const radarZoomOutBtn = document.getElementById('radar-zoom-out');
+const radarTimeSliderEl = document.getElementById('radar-time-slider');
+const radarTimeLabelEl = document.getElementById('radar-time-label');
+const radarForecastNoteEl = document.getElementById('radar-forecast-note');
 
 // Holds everything needed to redraw the map: null until the first successful search.
 let radarState = null;
@@ -318,40 +321,73 @@ async function renderRadar(lat, lon) {
   radarCaptionEl.textContent = '';
   radarPlaceholderEl.textContent = 'Loading radar...';
   radarPlaceholderEl.style.display = 'block';
+  radarTimeSliderEl.disabled = true;
 
   try {
     const response = await fetch('https://api.rainviewer.com/public/weather-maps.json');
     const data = await response.json();
-    const pastFrames = data.radar && data.radar.past;
-    const latestFrame = pastFrames && pastFrames[pastFrames.length - 1];
+    // RainViewer's documented guarantee is "past": 2 hours of history in 10-minute steps.
+    // "nowcast" (forecast) isn't in their public docs and is often empty — when it does have
+    // frames we use them for the +2h side of the slider, but the app works fine without it.
+    const pastFrames = (data.radar && data.radar.past) || [];
+    const forecastFrames = (data.radar && data.radar.nowcast) || [];
 
-    if (!latestFrame) {
+    if (pastFrames.length === 0) {
       throw new Error('Radar data unavailable.');
     }
 
     const zoom = RADAR_DEFAULT_ZOOM;
     const centerPx = lonLatToWorldPx(lon, lat, zoom);
+    const nowIndex = pastFrames.length - 1;
 
     radarState = {
       zoom,
       centerPxX: centerPx.x,
       centerPxY: centerPx.y,
-      radarPath: latestFrame.path,
       cityLon: lon,
       cityLat: lat,
+      frames: [...pastFrames, ...forecastFrames], // chronological: oldest past ... now ... forecast
+      nowIndex,
+      frameIndex: nowIndex, // slider starts on the most recent real data
     };
 
     radarPlaceholderEl.style.display = 'none';
     drawRadarTiles();
 
-    const frameTime = new Date(latestFrame.time * 1000);
-    radarCaptionEl.textContent = `Radar as of ${frameTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })} — drag to pan, scroll to zoom`;
+    radarTimeSliderEl.disabled = false;
+    radarTimeSliderEl.min = '0';
+    radarTimeSliderEl.max = String(radarState.frames.length - 1);
+    radarTimeSliderEl.value = String(nowIndex);
+    radarForecastNoteEl.textContent = forecastFrames.length > 0 ? '+2h' : 'forecast unavailable';
+    updateRadarTimeLabel();
+
+    radarCaptionEl.textContent = 'Drag to pan, scroll to zoom, use the slider for past/forecast radar';
   } catch (error) {
     radarState = null;
     radarPlaceholderEl.textContent = 'Could not load rain radar.';
     radarPlaceholderEl.style.display = 'block';
   }
 }
+
+function updateRadarTimeLabel() {
+  if (!radarState) return;
+  const frame = radarState.frames[radarState.frameIndex];
+  const offsetMin = (radarState.frameIndex - radarState.nowIndex) * 10;
+  const timeStr = new Date(frame.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  let offsetLabel = 'Now';
+  if (offsetMin > 0) offsetLabel = `+${offsetMin} min (forecast)`;
+  else if (offsetMin < 0) offsetLabel = `${offsetMin} min`;
+
+  radarTimeLabelEl.textContent = `${offsetLabel} · ${timeStr}`;
+}
+
+radarTimeSliderEl.addEventListener('input', () => {
+  if (!radarState) return;
+  radarState.frameIndex = parseInt(radarTimeSliderEl.value, 10);
+  updateRadarTimeLabel();
+  drawRadarOverlayTiles();
+});
 
 // The container is responsive (CSS max-width: 100% shrinks it on small screens), so all pixel
 // math must use its real rendered size rather than the RADAR_MAP_SIZE constant — otherwise
@@ -360,14 +396,15 @@ function getMapSize() {
   return radarMapEl.clientWidth || RADAR_MAP_SIZE;
 }
 
-// Rebuilds the tile grid + city marker for the current radarState (zoom/pan position).
+// Rebuilds the base map tiles + radar overlay + city marker for the current radarState
+// (zoom/pan position). Used for pan/zoom, where the base map itself needs to change.
 function drawRadarTiles() {
   if (!radarState) return;
 
   radarTilesEl.style.transform = '';
   radarTilesEl.innerHTML = '';
 
-  const { zoom, centerPxX, centerPxY, radarPath, cityLon, cityLat } = radarState;
+  const { zoom, centerPxX, centerPxY, cityLon, cityLat } = radarState;
   const worldTiles = 2 ** zoom;
   const mapSize = getMapSize();
 
@@ -388,7 +425,7 @@ function drawRadarTiles() {
       const wrappedX = ((x % worldTiles) + worldTiles) % worldTiles;
 
       const baseTile = document.createElement('img');
-      baseTile.className = 'tile';
+      baseTile.className = 'tile base-tile';
       baseTile.draggable = false;
       baseTile.onerror = () => baseTile.remove();
       baseTile.src = `https://a.tile.openstreetmap.org/${zoom}/${wrappedX}/${y}.png`;
@@ -397,6 +434,33 @@ function drawRadarTiles() {
       radarTilesEl.appendChild(baseTile);
     }
   }
+
+  drawRadarOverlayTiles();
+
+  // The marker stays pinned to the searched city's real coordinates, not the map center.
+  const cityPx = lonLatToWorldPx(cityLon, cityLat, zoom);
+  const marker = document.createElement('div');
+  marker.className = 'marker';
+  marker.style.left = `${cityPx.x - originX}px`;
+  marker.style.top = `${cityPx.y - originY}px`;
+  radarTilesEl.appendChild(marker);
+}
+
+// Rebuilds just the rain radar overlay for the currently selected time (radarState.frameIndex),
+// leaving the base map and marker untouched — this is what the time slider calls on every drag,
+// so scrubbing through frames doesn't re-request unchanged OpenStreetMap tiles.
+function drawRadarOverlayTiles() {
+  if (!radarState) return;
+
+  radarTilesEl.querySelectorAll('.radar-tile').forEach((el) => el.remove());
+
+  const frame = radarState.frames[radarState.frameIndex];
+  if (!frame) return;
+
+  const { zoom, centerPxX, centerPxY } = radarState;
+  const mapSize = getMapSize();
+  const originX = centerPxX - mapSize / 2;
+  const originY = centerPxY - mapSize / 2;
 
   // RainViewer's radar imagery only has real data up to RADAR_TILE_MAX_ZOOM — beyond that
   // it silently returns an identical "not supported" placeholder image. So once the map is
@@ -430,10 +494,10 @@ function drawRadarTiles() {
       const wrappedX = ((x % radarWorldTiles) + radarWorldTiles) % radarWorldTiles;
 
       const radarTile = document.createElement('img');
-      radarTile.className = 'tile';
+      radarTile.className = 'tile radar-tile';
       radarTile.draggable = false;
       radarTile.onerror = () => radarTile.remove();
-      radarTile.src = `https://tilecache.rainviewer.com${radarPath}/256/${radarZoom}/${wrappedX}/${y}/2/1_1.png`;
+      radarTile.src = `https://tilecache.rainviewer.com${frame.path}/256/${radarZoom}/${wrappedX}/${y}/2/1_1.png`;
       radarTile.style.left = `${left}px`;
       radarTile.style.top = `${top}px`;
       radarTile.style.width = `${radarTileSpan}px`;
@@ -442,14 +506,6 @@ function drawRadarTiles() {
       radarTilesEl.appendChild(radarTile);
     }
   }
-
-  // The marker stays pinned to the searched city's real coordinates, not the map center.
-  const cityPx = lonLatToWorldPx(cityLon, cityLat, zoom);
-  const marker = document.createElement('div');
-  marker.className = 'marker';
-  marker.style.left = `${cityPx.x - originX}px`;
-  marker.style.top = `${cityPx.y - originY}px`;
-  radarTilesEl.appendChild(marker);
 }
 
 // Zooms toward a specific point on screen (screenX/screenY are pixels inside #radar-map),

@@ -48,6 +48,38 @@ body {
   color: #6b4e34;
 }
 
+.radar-timeline {
+  margin: 0 auto 16px;
+  max-width: 544px;
+}
+
+.radar-time-label {
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: #4a3320;
+  margin-bottom: 4px;
+}
+
+#radar-time-slider {
+  width: 100%;
+  accent-color: #b3714a;
+  cursor: pointer;
+}
+
+#radar-time-slider:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.radar-timeline-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: #9c8267;
+  margin-top: 2px;
+}
+
 #radar-map {
   position: relative;
   width: 544px;

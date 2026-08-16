@@ -24,6 +24,14 @@
 
     <aside class="radar-panel">
       <h3>Rain radar</h3>
+      <div class="radar-timeline">
+        <div class="radar-time-label" id="radar-time-label">Now</div>
+        <input type="range" id="radar-time-slider" min="0" max="0" value="0" step="1" disabled>
+        <div class="radar-timeline-ends">
+          <span>-2h</span>
+          <span id="radar-forecast-note">forecast unavailable</span>
+        </div>
+      </div>
       <div id="radar-map">
         <div id="radar-tiles"></div>
         <div class="radar-zoom-controls">
