@@ -553,6 +553,7 @@ radarMapEl.addEventListener(
         startY: event.touches[0].clientY,
         startCenterPxX: radarState.centerPxX,
         startCenterPxY: radarState.centerPxY,
+        startTime: Date.now(),
       };
     } else if (event.touches.length === 2) {
       const rect = radarMapEl.getBoundingClientRect();
@@ -569,6 +570,7 @@ radarMapEl.addEventListener(
         startWorldMidY: radarState.centerPxY - mapSize / 2 + startMid.y,
         lastMid: startMid,
         lastScale: 1,
+        startTime: Date.now(),
       };
       radarTilesEl.style.transformOrigin = `${startMid.x}px ${startMid.y}px`;
     }
@@ -604,16 +606,68 @@ radarMapEl.addEventListener(
   { passive: false }
 );
 
-function endRadarTouch() {
+// Tap detection: a touch that ends quickly without much movement counts as a tap.
+// Two of those (one finger) close together in time and position = double-tap = zoom in.
+// A single two-finger tap = zoom out. Both anchor the zoom at the tap location.
+const TAP_MAX_DURATION_MS = 300;
+const TAP_MAX_MOVE_PX = 12;
+const DOUBLE_TAP_MAX_GAP_MS = 350;
+const DOUBLE_TAP_MAX_DISTANCE_PX = 40;
+
+let lastTapTime = 0;
+let lastTapPos = null;
+
+function endRadarTouch(event) {
   if (!radarTouch) return;
+  const duration = Date.now() - radarTouch.startTime;
 
   if (radarTouch.mode === 'drag') {
+    const endTouch = event.changedTouches && event.changedTouches[0];
+    const rect = radarMapEl.getBoundingClientRect();
+    const tapX = endTouch ? endTouch.clientX - rect.left : null;
+    const tapY = endTouch ? endTouch.clientY - rect.top : null;
+    const moved = endTouch ? Math.hypot(endTouch.clientX - radarTouch.startX, endTouch.clientY - radarTouch.startY) : Infinity;
+
+    if (endTouch && moved < TAP_MAX_MOVE_PX && duration < TAP_MAX_DURATION_MS) {
+      radarTilesEl.style.transform = '';
+      radarTouch = null;
+
+      const now = Date.now();
+      const isDoubleTap =
+        lastTapPos &&
+        now - lastTapTime < DOUBLE_TAP_MAX_GAP_MS &&
+        Math.hypot(tapX - lastTapPos.x, tapY - lastTapPos.y) < DOUBLE_TAP_MAX_DISTANCE_PX;
+
+      if (isDoubleTap) {
+        lastTapTime = 0;
+        lastTapPos = null;
+        zoomRadar(1, tapX, tapY); // double-tap: zoom in on the tapped point
+      } else {
+        lastTapTime = now;
+        lastTapPos = { x: tapX, y: tapY };
+      }
+      return;
+    }
+
     const match = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(radarTilesEl.style.transform);
     if (match) {
       radarState.centerPxX = radarTouch.startCenterPxX - parseFloat(match[1]);
       radarState.centerPxY = radarTouch.startCenterPxY - parseFloat(match[2]);
     }
   } else if (radarTouch.mode === 'pinch') {
+    const moved = Math.hypot(radarTouch.lastMid.x - radarTouch.startMid.x, radarTouch.lastMid.y - radarTouch.startMid.y);
+    const scaleChanged = Math.abs(radarTouch.lastScale - 1) > 0.08;
+
+    radarTilesEl.style.transform = '';
+    radarTilesEl.style.transformOrigin = '';
+
+    if (!scaleChanged && moved < TAP_MAX_MOVE_PX && duration < TAP_MAX_DURATION_MS) {
+      const tapMid = radarTouch.lastMid;
+      radarTouch = null;
+      zoomRadar(-1, tapMid.x, tapMid.y); // two-finger tap: zoom out, anchored at the midpoint
+      return;
+    }
+
     const mapSize = getMapSize();
     const newZoom = Math.min(
       RADAR_MAX_ZOOM,
@@ -631,8 +685,14 @@ function endRadarTouch() {
   drawRadarTiles();
 }
 
+function cancelRadarTouch() {
+  radarTouch = null;
+  radarTilesEl.style.transformOrigin = '';
+  drawRadarTiles();
+}
+
 radarMapEl.addEventListener('touchend', endRadarTouch);
-radarMapEl.addEventListener('touchcancel', endRadarTouch);
+radarMapEl.addEventListener('touchcancel', cancelRadarTouch);
 
 // Show a default city as soon as the page loads.
 cityInput.value = 'Tampere';
