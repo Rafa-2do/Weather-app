@@ -144,6 +144,11 @@ function renderWeather(location, forecast, air) {
     </section>
 
     <section>
+      <h3>Sunrise &amp; sunset</h3>
+      <div class="sun-arc-wrap">${buildSunPath(daily, current.time)}</div>
+    </section>
+
+    <section>
       <h3>10-day forecast</h3>
       <div class="daily-list">${buildDaily(daily)}</div>
     </section>
@@ -152,7 +157,7 @@ function renderWeather(location, forecast, air) {
 
 function buildHourly(hourly, nowIndex) {
   let html = '';
-  const end = Math.min(nowIndex + 12, hourly.time.length);
+  const end = Math.min(nowIndex + 24, hourly.time.length);
 
   for (let i = nowIndex; i < end; i++) {
     const time = new Date(hourly.time[i]);
@@ -173,55 +178,197 @@ function buildHourly(hourly, nowIndex) {
 
 function buildDetails(current, hourly, daily, air, nowIndex) {
   const windDir = degToCompass(current.wind_direction_10m);
-  const sunrise = formatTime(daily.sunrise[0]);
-  const sunset = formatTime(daily.sunset[0]);
+  const windKmh = Math.round(current.wind_speed_10m * 3.6);
+  const windPercent = (Math.max(0, Math.min(130, windKmh)) / 130) * 100;
 
   const uv = hourly.uv_index[nowIndex] != null ? Math.round(hourly.uv_index[nowIndex]) : null;
+  const uvPercent = uv != null ? (Math.max(0, Math.min(12, uv)) / 12) * 100 : null;
   const visibilityKm = hourly.visibility[nowIndex] != null ? (hourly.visibility[nowIndex] / 1000).toFixed(1) : null;
   const aqi = air && air.european_aqi != null ? Math.round(air.european_aqi) : null;
+  const aqiPercent = aqi != null ? (Math.max(0, Math.min(120, aqi)) / 120) * 100 : null;
+  const humidityPercent =
+    current.relative_humidity_2m != null ? Math.max(0, Math.min(100, current.relative_humidity_2m)) : null;
 
   return `
     <div class="detail-card">
-      <div class="label">💨 Wind</div>
-      <div class="value">${current.wind_speed_10m} m/s</div>
-      <div class="sub">From ${windDir}</div>
-    </div>
-    <div class="detail-card">
-      <div class="label">🌅 Sunrise &amp; sunset</div>
-      <div class="value">${sunrise}</div>
-      <div class="sub">Sunset ${sunset}</div>
+      <div class="label">💨 Wind direction ${windDir}</div>
+      <div class="wind-bar-wrap">
+        <div class="wind-bar">
+          <span class="wind-segment wind-segment-blue"></span>
+          <span class="wind-segment wind-segment-green"></span>
+          <span class="wind-segment wind-segment-yellow"></span>
+          <span class="wind-segment wind-segment-red"></span>
+          <span class="wind-segment wind-segment-purple"></span>
+          <span class="wind-segment wind-segment-maroon"></span>
+        </div>
+        <div class="wind-marker" style="left: ${windPercent.toFixed(1)}%">
+          <span class="wind-marker-value" style="transform: ${markerAnchor(windPercent)}">${current.wind_speed_10m} m/s <span class="wind-marker-value-secondary">(${windKmh} km/h)</span></span>
+        </div>
+      </div>
+      <div class="sub">${getBeaufortDescription(windKmh)}</div>
     </div>
     <div class="detail-card">
       <div class="label">🔆 UV index</div>
-      <div class="value">${uv ?? '--'}</div>
+      <div class="uv-bar-wrap">
+        <div class="uv-bar">
+          <span class="uv-segment uv-segment-green"></span>
+          <span class="uv-segment uv-segment-yellow"></span>
+          <span class="uv-segment uv-segment-orange"></span>
+          <span class="uv-segment uv-segment-red"></span>
+          <span class="uv-segment uv-segment-violet"></span>
+        </div>
+        ${uvPercent != null ? `<div class="uv-marker" style="left: ${uvPercent.toFixed(1)}%">
+          <span class="uv-marker-value" style="transform: ${markerAnchor(uvPercent)}">${uv}</span>
+        </div>` : ''}
+      </div>
       <div class="sub">${getUvLabel(uv)}</div>
     </div>
     <div class="detail-card">
       <div class="label">🍃 Air quality</div>
-      <div class="value">${aqi ?? '--'}</div>
+      <div class="aqi-bar-wrap">
+        <div class="aqi-bar">
+          <span class="aqi-segment aqi-segment-blue"></span>
+          <span class="aqi-segment aqi-segment-green"></span>
+          <span class="aqi-segment aqi-segment-yellow"></span>
+          <span class="aqi-segment aqi-segment-red"></span>
+          <span class="aqi-segment aqi-segment-purple"></span>
+          <span class="aqi-segment aqi-segment-maroon"></span>
+        </div>
+        ${aqiPercent != null ? `<div class="aqi-marker" style="left: ${aqiPercent.toFixed(1)}%">
+          <span class="aqi-marker-value" style="transform: ${markerAnchor(aqiPercent)}">${aqi}</span>
+        </div>` : ''}
+      </div>
       <div class="sub">${getAqiLabel(aqi)}</div>
+    </div>
+    <div class="detail-card">
+      <div class="label">💧 Humidity</div>
+      <div class="humidity-bar-wrap">
+        <div class="humidity-bar">
+          <span class="humidity-segment humidity-segment-blue"></span>
+          <span class="humidity-segment humidity-segment-green"></span>
+          <span class="humidity-segment humidity-segment-yellow"></span>
+          <span class="humidity-segment humidity-segment-red"></span>
+          <span class="humidity-segment humidity-segment-purple"></span>
+        </div>
+        ${humidityPercent != null ? `<div class="humidity-marker" style="left: ${humidityPercent.toFixed(1)}%">
+          <span class="humidity-marker-value" style="transform: ${markerAnchor(humidityPercent)}">${current.relative_humidity_2m}%</span>
+        </div>` : ''}
+      </div>
+      <div class="sub">${getHumidityLabel(current.relative_humidity_2m)}</div>
     </div>
     <div class="detail-card">
       <div class="label">👁️ Visibility</div>
       <div class="value">${visibilityKm ?? '--'} km</div>
     </div>
     <div class="detail-card">
-      <div class="label">💧 Humidity</div>
-      <div class="value">${current.relative_humidity_2m}%</div>
-    </div>
-    <div class="detail-card">
       <div class="label">📊 Pressure</div>
-      <div class="value">${Math.round(current.surface_pressure)} hPa</div>
+      <div class="value">${Math.round(current.surface_pressure)} hPa/mbar</div>
+    </div>
+  `;
+}
+
+// Draws a day arc between sunrise and sunset, with the sunrise/sunset times shown as large
+// labels flanking it, tick marks at its base, and a dashed horizon line running the full
+// width behind everything. The sun marker's (x,y) is computed with the same ellipse math
+// used for the arc's "A" path command, so it always sits exactly on the drawn curve.
+function buildSunPath(daily, currentTimeIso) {
+  const sunriseIso = daily.sunrise[0];
+  const sunsetIso = daily.sunset[0];
+
+  if (!sunriseIso || !sunsetIso) {
+    return '<p class="sun-arc-unavailable">Sunrise/sunset data unavailable for this location.</p>';
+  }
+
+  const sunriseDate = new Date(sunriseIso);
+  const sunsetDate = new Date(sunsetIso);
+  const now = new Date(currentTimeIso);
+
+  const dayMs = sunsetDate - sunriseDate;
+  const elapsedMs = now - sunriseDate;
+  // Sun position along the arc; before sunrise/after sunset it's pinned to the sunrise/sunset
+  // tick rather than continuing past it (we have no data for a night-side path).
+  const t = Math.max(0, Math.min(1, dayMs > 0 ? elapsedMs / dayMs : 0));
+
+  // Arc geometry, in SVG user units.
+  const leftX = 4;
+  const rightX = 336;
+  const dayLeftX = 80; // sunrise tick
+  const dayRightX = 260; // sunset tick
+  const baselineY = 85;
+  const dayRy = 65; // dome height
+  const dayRx = (dayRightX - dayLeftX) / 2; // 90
+  const dayCx = (dayLeftX + dayRightX) / 2; // 170
+
+  // Point on the arc at progress t (0 = sunrise/left, 1 = sunset/right).
+  const angle = Math.PI - t * Math.PI;
+  const sunX = (dayCx + dayRx * Math.cos(angle)).toFixed(1);
+  const sunY = (baselineY - dayRy * Math.sin(angle)).toFixed(1);
+
+  const durationMin = Math.max(0, Math.round(dayMs / 60000));
+  const durationLabel = `${Math.floor(durationMin / 60)}h ${durationMin % 60}m`;
+  const sunriseLabel = formatTime(sunriseIso);
+  const sunsetLabel = formatTime(sunsetIso);
+
+  // Outside daylight hours, "remaining daylight" doesn't apply — show a countdown to the next
+  // sunrise instead (today's if we're still before dawn, otherwise tomorrow's, which `daily`
+  // already has since it covers the full 10-day forecast, not just today).
+  let bottomLabel;
+  let bottomValue;
+
+  if (now < sunriseDate || now > sunsetDate) {
+    const nextSunriseIso = now < sunriseDate ? sunriseIso : daily.sunrise[1];
+    const untilSunriseMin = nextSunriseIso ? Math.max(0, Math.round((new Date(nextSunriseIso) - now) / 60000)) : 0;
+    bottomLabel = 'Daytime in';
+    bottomValue = `${Math.floor(untilSunriseMin / 60)}h ${untilSunriseMin % 60}m`;
+  } else {
+    const remainingMin = Math.max(0, Math.round((dayMs * (1 - t)) / 60000));
+    bottomLabel = 'Remaining daylight';
+    bottomValue = `${Math.floor(remainingMin / 60)}h ${remainingMin % 60}m`;
+  }
+
+  return `
+    <div class="sun-arc-caption">
+      <span class="sun-arc-caption-label">Length of day</span>
+      <span class="sun-arc-caption-value">${durationLabel}</span>
+    </div>
+    <svg class="sun-arc" viewBox="0 2 340 98" preserveAspectRatio="xMidYMid meet" role="img"
+         aria-label="Sun position: ${durationLabel} of daytime, ${bottomLabel.toLowerCase()} ${bottomValue}, sunrise ${sunriseLabel}, sunset ${sunsetLabel}">
+      <line class="sun-arc-baseline" x1="${leftX}" y1="${baselineY}" x2="${rightX}" y2="${baselineY}" />
+      <path class="sun-arc-elapsed" d="M ${dayLeftX},${baselineY} A ${dayRx},${dayRy} 0 0,1 ${sunX},${sunY}" />
+      <path class="sun-arc-remaining" d="M ${sunX},${sunY} A ${dayRx},${dayRy} 0 0,1 ${dayRightX},${baselineY}" />
+      <line class="sun-arc-tick" x1="${dayLeftX}" y1="${baselineY - 6}" x2="${dayLeftX}" y2="${baselineY + 6}" />
+      <line class="sun-arc-tick" x1="${dayRightX}" y1="${baselineY - 6}" x2="${dayRightX}" y2="${baselineY + 6}" />
+      <circle class="sun-arc-glow" cx="${sunX}" cy="${sunY}" r="14" />
+      <circle class="sun-arc-marker" cx="${sunX}" cy="${sunY}" r="7" />
+      <text class="sun-arc-side-label" x="${leftX}" y="${baselineY - 24}">Sunrise</text>
+      <text class="sun-arc-side-value" x="${leftX}" y="${baselineY - 6}">${sunriseLabel}</text>
+      <text class="sun-arc-side-label" x="${rightX}" y="${baselineY - 24}" text-anchor="end">Sunset</text>
+      <text class="sun-arc-side-value" x="${rightX}" y="${baselineY - 6}" text-anchor="end">${sunsetLabel}</text>
+      <text class="sun-arc-horizon-label" x="${rightX}" y="${baselineY + 10}" text-anchor="end">Horizon</text>
+    </svg>
+    <div class="sun-arc-caption">
+      <span class="sun-arc-caption-label">${bottomLabel}</span>
+      <span class="sun-arc-caption-value">${bottomValue}</span>
     </div>
   `;
 }
 
 function buildDaily(daily) {
-  let html = '';
+  let html = `
+    <div class="daily-row daily-header">
+      <div class="day">${formatDDMMYYYY(daily.time[0])}</div>
+      <div class="icon">Weather</div>
+      <div class="prob">🌧️</div>
+      <div class="temps">Hi / Lo</div>
+    </div>
+  `;
 
   for (let i = 0; i < daily.time.length; i++) {
     const date = new Date(daily.time[i]);
-    const label = i === 0 ? 'Today' : date.toLocaleDateString([], { weekday: 'short' });
+    const label =
+      i === 0
+        ? 'Today'
+        : `${date.toLocaleDateString([], { weekday: 'short' })} <span class="day-date">${formatDDMM(daily.time[i])}</span>`;
     const icon = getWeatherIcon(daily.weather_code[i], true);
     const prob = daily.precipitation_probability_max[i];
 
@@ -266,6 +413,16 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
+function formatDDMM(iso) {
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatDDMMYYYY(iso) {
+  const d = new Date(iso);
+  return `${formatDDMM(iso)}/${d.getFullYear()}`;
+}
+
 function getUvLabel(uv) {
   if (uv == null) return '';
   if (uv <= 2) return 'Low';
@@ -283,6 +440,43 @@ function getAqiLabel(aqi) {
   if (aqi <= 80) return 'Poor';
   if (aqi <= 100) return 'Very poor';
   return 'Extremely poor';
+}
+
+function getHumidityLabel(humidity) {
+  if (humidity == null) return '';
+  if (humidity <= 30) return 'Dry';
+  if (humidity <= 50) return 'Comfortable';
+  if (humidity <= 65) return 'Tolerable';
+  if (humidity <= 80) return 'Humid';
+  return 'Oppressive';
+}
+
+// Beaufort wind force scale (0-12), thresholds in km/h per the Met Office reference table.
+function getBeaufortDescription(kmh) {
+  if (kmh == null) return '';
+  if (kmh < 1) return 'Calm';
+  if (kmh < 6) return 'Light air';
+  if (kmh < 12) return 'Light breeze';
+  if (kmh < 20) return 'Gentle breeze';
+  if (kmh < 29) return 'Moderate breeze';
+  if (kmh < 39) return 'Fresh breeze';
+  if (kmh < 50) return 'Strong breeze';
+  if (kmh < 62) return 'Near gale';
+  if (kmh < 75) return 'Gale';
+  if (kmh < 89) return 'Strong gale';
+  if (kmh < 103) return 'Storm';
+  if (kmh < 118) return 'Violent storm';
+  return 'Hurricane';
+}
+
+// The floating marker label is centered on its tick by default, but centering can push wide
+// labels (e.g. wind's "4.7 m/s (17 km/h)") past the card's edge when the tick sits near either
+// end of the bar. Anchoring left/right instead near the edges keeps the label fully in bounds
+// while it still tracks the tick's exact position.
+function markerAnchor(percent) {
+  if (percent < 35) return 'translateX(0)';
+  if (percent > 65) return 'translateX(-100%)';
+  return 'translateX(-50%)';
 }
 
 // --- Rain radar map (hand-built interactive "slippy map" using OpenStreetMap + RainViewer tiles) ---
