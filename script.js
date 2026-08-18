@@ -509,7 +509,7 @@ function markerAnchor(percent) {
 
 const RADAR_TILE_SIZE = 256;
 const RADAR_MAP_SIZE = 544;
-const RADAR_DEFAULT_ZOOM = 7;
+const RADAR_DEFAULT_ZOOM = 9;
 const RADAR_MIN_ZOOM = 3;
 const RADAR_MAX_ZOOM = 18;
 const RADAR_TILE_MAX_ZOOM = 7; // RainViewer has no real radar data past this zoom
