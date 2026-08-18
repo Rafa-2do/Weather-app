@@ -91,7 +91,7 @@ async function getForecast(latitude, longitude) {
     `latitude=${latitude}`,
     `longitude=${longitude}`,
     `current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,surface_pressure,is_day`,
-    `hourly=temperature_2m,weather_code,precipitation_probability,visibility,uv_index,is_day`,
+    `hourly=temperature_2m,weather_code,precipitation_probability,visibility,uv_index,is_day,surface_pressure`,
     `daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max`,
     `timezone=auto`,
     `wind_speed_unit=ms`,
@@ -190,6 +190,28 @@ function buildDetails(current, hourly, daily, air, nowIndex) {
   const pressureHpa = Math.round(current.surface_pressure);
   const pressurePercent = (Math.max(950, Math.min(1050, pressureHpa)) - 950) / 100 * 100;
 
+  // 3-hour pressure tendency — the number meteorologists actually watch for incoming weather,
+  // since a fast drop is a reliable short-term storm signal even before the absolute level
+  // looks low. Falls back to a shorter window near the very start of the fetched hourly data.
+  const pressureTrendHours = Math.min(3, nowIndex);
+  const pressureTrendChange =
+    pressureTrendHours > 0 ? current.surface_pressure - hourly.surface_pressure[nowIndex - pressureTrendHours] : null;
+  let pressureTrendLabel = '';
+  let pressureTrendColor = '#6b4e34';
+  if (pressureTrendChange != null) {
+    const sign = pressureTrendChange > 0 ? '+' : '';
+    const detail = `<span class="pressure-trend-detail">(${sign}${pressureTrendChange.toFixed(1)} hPa/${pressureTrendHours}h)</span>`;
+    if (pressureTrendChange > 1) {
+      pressureTrendLabel = `↑ Rising ${detail}`;
+      pressureTrendColor = '#4caf50';
+    } else if (pressureTrendChange < -1) {
+      pressureTrendLabel = `↓ Falling ${detail}`;
+      pressureTrendColor = '#f44336';
+    } else {
+      pressureTrendLabel = `→ Steady ${detail}`;
+    }
+  }
+
   return `
     <div class="detail-card">
       <div class="label">💨 Wind direction ${windDir} <span class="wind-dir-arrow" style="transform: rotate(${current.wind_direction_10m}deg)">↑</span></div>
@@ -258,7 +280,10 @@ function buildDetails(current, hourly, daily, air, nowIndex) {
       <div class="sub">${getHumidityLabel(current.relative_humidity_2m)}</div>
     </div>
     <div class="detail-card detail-card-wide">
-      <div class="label">📊 Pressure</div>
+      <div class="label pressure-trend-label">
+        <span>📊 Pressure</span>
+        ${pressureTrendLabel ? `<span class="pressure-trend-indicator" style="color: ${pressureTrendColor}">${pressureTrendLabel}</span>` : ''}
+      </div>
       <div class="pressure-bar-wrap">
         <div class="pressure-bar">
           <span class="pressure-segment pressure-segment-red"></span>
@@ -266,7 +291,7 @@ function buildDetails(current, hourly, daily, air, nowIndex) {
           <span class="pressure-segment pressure-segment-green"></span>
         </div>
         <div class="pressure-marker" style="left: ${pressurePercent.toFixed(1)}%">
-          <span class="pressure-marker-value" style="transform: ${markerAnchor(pressurePercent)}">${pressureHpa} hPa/mbar</span>
+          <span class="pressure-marker-value" style="transform: ${markerAnchor(pressurePercent)}">${pressureHpa} hPa <span class="pressure-unit-secondary">(mbar)</span></span>
         </div>
         <div class="pressure-scale">
           <span class="pressure-scale-tick" style="left: 0%; transform: translateX(0)">950</span>

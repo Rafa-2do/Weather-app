@@ -681,6 +681,10 @@ button:hover {
   line-height: 1;
 }
 
+.pressure-unit-secondary {
+  font-weight: normal;
+}
+
 .pressure-legend {
   display: flex;
   justify-content: space-between;
@@ -714,6 +718,19 @@ button:hover {
   font-size: 0.6rem;
   color: #6b4e34;
   white-space: nowrap;
+}
+
+.pressure-trend-label {
+  justify-content: space-between;
+}
+
+.pressure-trend-indicator {
+  font-size: 0.7rem;
+  font-weight: bold;
+}
+
+.pressure-trend-detail {
+  font-weight: normal;
 }
 
 /* Sunrise & sunset arc */
