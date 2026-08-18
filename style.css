@@ -318,12 +318,22 @@ button:hover {
   padding: 12px;
 }
 
+.detail-card-wide {
+  grid-column: 1 / -1;
+}
+
 .detail-card .label {
   font-size: 0.75rem;
   color: #6b4e34;
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.wind-dir-arrow {
+  display: inline-block;
+  font-size: 0.85em;
+  margin-left: 4px;
 }
 
 .detail-card .value {
@@ -617,6 +627,95 @@ button:hover {
   color: #6b4e34;
 }
 
+.pressure-bar-wrap {
+  position: relative;
+  margin: 16px 0 4px;
+}
+
+.pressure-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.pressure-segment-red {
+  background: #f44336;
+  flex: 30;
+}
+
+.pressure-segment-yellow {
+  background: #ffeb3b;
+  flex: 40;
+}
+
+.pressure-segment-green {
+  background: #4caf50;
+  flex: 30;
+}
+
+.pressure-marker {
+  position: absolute;
+  top: -14px;
+}
+
+.pressure-marker::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 10px;
+  background: #4a3320;
+}
+
+.pressure-marker-value {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: #4a3320;
+  line-height: 1;
+}
+
+.pressure-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.pressure-legend-item {
+  flex: 1;
+  text-align: center;
+}
+
+.pressure-legend-main {
+  font-size: 0.75rem;
+  color: #6b4e34;
+}
+
+.pressure-legend-sub {
+  font-size: 0.65rem;
+  color: #6b4e34;
+}
+
+.pressure-scale {
+  position: relative;
+  height: 12px;
+  margin-top: 2px;
+}
+
+.pressure-scale-tick {
+  position: absolute;
+  top: 0;
+  font-size: 0.6rem;
+  color: #6b4e34;
+  white-space: nowrap;
+}
+
 /* Sunrise & sunset arc */
 
 .sun-arc-wrap {
@@ -743,6 +842,7 @@ button:hover {
 
 .daily-row .prob {
   width: 40px;
+  margin-left: 18px;
   text-align: center;
   font-size: 0.8rem;
   color: #4a90d9;
@@ -757,11 +857,14 @@ button:hover {
 
 .daily-header .day,
 .daily-header .icon,
-.daily-header .prob,
 .daily-header .temps {
   font-size: 0.7rem;
   font-weight: normal;
   color: #9c8267;
+}
+
+.daily-header .prob {
+  font-size: 1.1rem;
 }
 
 .day-date {

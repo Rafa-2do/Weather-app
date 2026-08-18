@@ -183,15 +183,16 @@ function buildDetails(current, hourly, daily, air, nowIndex) {
 
   const uv = hourly.uv_index[nowIndex] != null ? Math.round(hourly.uv_index[nowIndex]) : null;
   const uvPercent = uv != null ? (Math.max(0, Math.min(12, uv)) / 12) * 100 : null;
-  const visibilityKm = hourly.visibility[nowIndex] != null ? (hourly.visibility[nowIndex] / 1000).toFixed(1) : null;
   const aqi = air && air.european_aqi != null ? Math.round(air.european_aqi) : null;
   const aqiPercent = aqi != null ? (Math.max(0, Math.min(120, aqi)) / 120) * 100 : null;
   const humidityPercent =
     current.relative_humidity_2m != null ? Math.max(0, Math.min(100, current.relative_humidity_2m)) : null;
+  const pressureHpa = Math.round(current.surface_pressure);
+  const pressurePercent = (Math.max(950, Math.min(1050, pressureHpa)) - 950) / 100 * 100;
 
   return `
     <div class="detail-card">
-      <div class="label">💨 Wind direction ${windDir}</div>
+      <div class="label">💨 Wind direction ${windDir} <span class="wind-dir-arrow" style="transform: rotate(${current.wind_direction_10m}deg)">↑</span></div>
       <div class="wind-bar-wrap">
         <div class="wind-bar">
           <span class="wind-segment wind-segment-blue"></span>
@@ -256,13 +257,38 @@ function buildDetails(current, hourly, daily, air, nowIndex) {
       </div>
       <div class="sub">${getHumidityLabel(current.relative_humidity_2m)}</div>
     </div>
-    <div class="detail-card">
-      <div class="label">👁️ Visibility</div>
-      <div class="value">${visibilityKm ?? '--'} km</div>
-    </div>
-    <div class="detail-card">
+    <div class="detail-card detail-card-wide">
       <div class="label">📊 Pressure</div>
-      <div class="value">${Math.round(current.surface_pressure)} hPa/mbar</div>
+      <div class="pressure-bar-wrap">
+        <div class="pressure-bar">
+          <span class="pressure-segment pressure-segment-red"></span>
+          <span class="pressure-segment pressure-segment-yellow"></span>
+          <span class="pressure-segment pressure-segment-green"></span>
+        </div>
+        <div class="pressure-marker" style="left: ${pressurePercent.toFixed(1)}%">
+          <span class="pressure-marker-value" style="transform: ${markerAnchor(pressurePercent)}">${pressureHpa} hPa/mbar</span>
+        </div>
+        <div class="pressure-scale">
+          <span class="pressure-scale-tick" style="left: 0%; transform: translateX(0)">950</span>
+          <span class="pressure-scale-tick" style="left: 30%; transform: translateX(-50%)">980</span>
+          <span class="pressure-scale-tick" style="left: 70%; transform: translateX(-50%)">1020</span>
+          <span class="pressure-scale-tick" style="left: 100%; transform: translateX(-100%)">1050</span>
+        </div>
+      </div>
+      <div class="pressure-legend">
+        <div class="pressure-legend-item">
+          <div class="pressure-legend-main">Stormy/Rainy</div>
+          <div class="pressure-legend-sub">(Low Pressure)</div>
+        </div>
+        <div class="pressure-legend-item">
+          <div class="pressure-legend-main">Variable</div>
+          <div class="pressure-legend-sub">(Normal Pressure)</div>
+        </div>
+        <div class="pressure-legend-item">
+          <div class="pressure-legend-main">Fair/Sunny</div>
+          <div class="pressure-legend-sub">(High Pressure)</div>
+        </div>
+      </div>
     </div>
   `;
 }
